@@ -181,9 +181,15 @@ with col2:
                     sampler = Sampler(backend)
                 except Exception as cloud_err:
                     status.write("⚠️ IBM Cloud unavailable. Falling back to local simulator...")
-                    from qiskit.primitives import BasicSampler
+                    # Robust local sampler import for different Qiskit versions
+                    try:
+                        from qiskit.primitives import StatevectorSampler as LocalSampler
+                        sampler = LocalSampler()
+                    except ImportError:
+                        from qiskit.primitives import Sampler as LocalSampler
+                        sampler = LocalSampler()
+                    
                     backend = None
-                    sampler = BasicSampler()
                     qc_transpiled = qc 
 
                 if backend:
@@ -191,11 +197,14 @@ with col2:
                     result = job.result()
                     counts = result[0].data.c.get_counts()
                 else:
+                    # Logic for local primitives
                     job = sampler.run([qc])
                     result = job.result()
-                    counts = result.quasi_dist[0].binary_probabilities() # For BasicSampler
-                
-                status.update(label="✅ Quantum Data Received", state="complete")
+                    if hasattr(result, 'quasi_dist'):
+                        counts = result.quasi_dist[0].binary_probabilities()
+                    else:
+                        # For newer StatevectorSampler
+                        counts = result[0].data.c.get_counts()
 
             dominant_state = max(counts, key=counts.get)
             
