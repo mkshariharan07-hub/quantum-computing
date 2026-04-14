@@ -26,16 +26,21 @@ def extract_features(img):
     img = cv2.resize(img, IMG_SIZE)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     
-    # 1. Color Histograms
-    h_hist = cv2.calcHist([hsv], [0], None, [16], [0, 180]).flatten()
+    # 1. Color Histograms (Finer Detail)
+    h_hist = cv2.calcHist([hsv], [0], None, [24], [0, 180]).flatten()
     s_hist = cv2.calcHist([hsv], [1], None, [16], [0, 256]).flatten()
     v_hist = cv2.calcHist([hsv], [2], None, [16], [0, 256]).flatten()
     
     # 2. Global Stats
     means, stds = cv2.meanStdDev(img)
     stats = np.concatenate([means.flatten(), stds.flatten()])
+
+    # 3. Edge Complexity (Crucial for Tomato vs Potato shape)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 100, 200)
+    edge_density = np.sum(edges > 0) / (IMG_SIZE[0] * IMG_SIZE[1])
     
-    return np.concatenate([h_hist, s_hist, v_hist, stats])
+    return np.concatenate([h_hist, s_hist, v_hist, stats, [edge_density]])
 
 # ===============================
 # LOAD & PREPROCESS

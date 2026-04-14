@@ -78,12 +78,22 @@ st.markdown("""
 def extract_features(img):
     img = cv2.resize(img, (128, 128))
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    h_hist = cv2.calcHist([hsv], [0], None, [16], [0, 180]).flatten()
+    
+    # 1. Color Histograms (Matches main.py)
+    h_hist = cv2.calcHist([hsv], [0], None, [24], [0, 180]).flatten()
     s_hist = cv2.calcHist([hsv], [1], None, [16], [0, 256]).flatten()
     v_hist = cv2.calcHist([hsv], [2], None, [16], [0, 256]).flatten()
+    
+    # 2. Stats
     means, stds = cv2.meanStdDev(img)
     stats = np.concatenate([means.flatten(), stds.flatten()])
-    return np.concatenate([h_hist, s_hist, v_hist, stats])
+    
+    # 3. Edge Complexity (Tomato vs Potato shape)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 100, 200)
+    edge_density = np.sum(edges > 0) / (128 * 128)
+    
+    return np.concatenate([h_hist, s_hist, v_hist, stats, [edge_density]])
 
 def load_app_model():
     if not os.path.exists("plant_model.pkl"):
@@ -148,6 +158,9 @@ with col2:
             st.markdown(f"<div class='metric-card'><h4>Status</h4><h2>{disease}</h2></div>", unsafe_allow_html=True)
         
         st.progress(confidence/100, text=f"AI Confidence Score: {confidence:.2f}%")
+        
+        if confidence < 60:
+            st.warning("⚠️ **Low Confidence Result**: The AI is having trouble distinguishing this leaf. Please ensure the leaf is well-lit and centered.")
 
         # Quantum Part
         st.markdown("---")
