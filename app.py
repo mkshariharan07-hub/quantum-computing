@@ -94,7 +94,7 @@ if uploaded_file is not None:
                 st.write(f"✅ Using real backend: {backend.name}")
             except Exception as backend_err:
                 st.write(f"ℹ️ Hardware busy/unavailable ({backend_err}). Falling back to QASM Simulator.")
-                backend = service.get_backend("ibmq_qasm_simulator")
+                backend = service.backend("ibmq_qasm_simulator")
 
             st.write("🚀 Running hybrid quantum execution...")
             qc_transpiled = transpile(qc, backend)

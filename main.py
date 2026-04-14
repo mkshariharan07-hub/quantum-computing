@@ -180,7 +180,7 @@ try:
         backend = service.least_busy(simulator=False, min_qubits=2)
         print(f"✅ Using real backend: {backend.name}")
     except:
-        backend = service.get_backend("ibmq_qasm_simulator")
+        backend = service.backend("ibmq_qasm_simulator")
         print("ℹ️ No real backend available, falling back to simulator.")
 
     # ===============================
