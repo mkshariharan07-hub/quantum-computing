@@ -93,8 +93,13 @@ if uploaded_file is not None:
                 backend = service.least_busy(simulator=False, min_qubits=2)
                 st.write(f"✅ Using real backend: {backend.name}")
             except Exception as backend_err:
-                st.write(f"ℹ️ Hardware busy/unavailable ({backend_err}). Falling back to QASM Simulator.")
-                backend = service.backend("ibmq_qasm_simulator")
+                st.write(f"ℹ️ Real hardware busy or account limit reached. Searching for available simulator...")
+                try:
+                    backend = service.least_busy(simulator=True)
+                    st.write(f"✅ Using cloud simulator: {backend.name}")
+                except Exception as sim_err:
+                    st.error("❌ No cloud backends (real or simulator) found for this account.")
+                    raise sim_err
 
             st.write("🚀 Running hybrid quantum execution...")
             qc_transpiled = transpile(qc, backend)
