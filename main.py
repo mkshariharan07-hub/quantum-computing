@@ -18,11 +18,17 @@ random.seed(42)
 # LOAD DATASET
 # ===============================
 
-images = np.load("images.npy")
-labels = np.load("labels.npy")
+try:
+    if not os.path.exists("images.npy") or not os.path.exists("labels.npy"):
+        raise FileNotFoundError("Missing dataset files (images.npy or labels.npy). Please ensure they are in the directory.")
+    
+    images = np.load("images.npy")
+    labels = np.load("labels.npy")
 
-print("Dataset loaded")
-print("Total images:", len(images))
+    print(f"✅ Dataset loaded successfully. Total images: {len(images)}")
+except Exception as e:
+    print(f"❌ Error loading dataset: {e}")
+    exit(1)
 
 # ===============================
 # PREPROCESS DATASET (IMPROVED)
@@ -43,22 +49,36 @@ print("Dataset preprocessed")
 # TRAIN / LOAD MODEL
 # ===============================
 
-if not os.path.exists("plant_model.pkl"):
-    print("\nTraining model...")
+try:
+    if not os.path.exists("plant_model.pkl"):
+        print("\n⏳ Training model (this may take a moment)...")
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        processed_images, labels, test_size=0.2, random_state=42
-    )
+        if len(processed_images) == 0:
+            raise ValueError("No images found to train on.")
 
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
+        X_train, X_test, y_train, y_test = train_test_split(
+            processed_images, labels, test_size=0.2, random_state=42
+        )
 
-    joblib.dump(model, "plant_model.pkl")
-    print("Model trained and saved")
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
 
-else:
-    model = joblib.load("plant_model.pkl")
-    print("Model loaded")
+        joblib.dump(model, "plant_model.pkl")
+        print("✅ Model trained and saved as plant_model.pkl")
+
+    else:
+        model = joblib.load("plant_model.pkl")
+        print("✅ Model loaded successfully from plant_model.pkl")
+        
+        # Verify feature compatibility
+        expected_features = 128 * 128 * 3
+        if model.n_features_in_ != expected_features:
+            print(f"⚠️ Model mismatch! Expected {model.n_features_in_} features, but script is set for {expected_features}.")
+            print("Consider deleting plant_model.pkl to retrain.")
+
+except Exception as e:
+    print(f"❌ Error during model operations: {e}")
+    exit(1)
 
 # ===============================
 # USER INPUT IMAGE
@@ -96,21 +116,27 @@ print("Image processed")
 # AI PREDICTION (STABLE)
 # ===============================
 
-predictions = []
+try:
+    predictions = []
+    # Using predict_proba for better confidence estimation if needed
+    for _ in range(5):
+        pred = model.predict(features)[0]
+        predictions.append(pred)
 
-for _ in range(5):
-    pred = model.predict(features)[0]
-    predictions.append(pred)
+    prediction = max(set(predictions), key=predictions.count)
+    plant, disease = prediction.split("___")
 
-prediction = max(set(predictions), key=predictions.count)
+    print(f"\n🤖 AI Prediction: {prediction}")
 
-plant, disease = prediction.split("___")
+    # Confidence calculation
+    conf_probs = model.predict_proba(features)
+    confidence = np.max(conf_probs) * 100
+    print(f"📊 Confidence Score: {confidence:.2f}%")
 
-print("\nAI Prediction:", prediction)
-
-# Confidence
-confidence = np.max(model.predict_proba(features)) * 100
-print(f"Confidence: {confidence:.2f}%")
+except Exception as e:
+    print(f"❌ Prediction Error: {e}")
+    print("Ensure the input image matches the expected training format.")
+    exit(1)
 
 # ===============================
 # CREATE QUANTUM CIRCUIT
@@ -135,41 +161,49 @@ print("Quantum Circuit Created")
 # CONNECT TO IBM QUANTUM
 # ===============================
 
-from qiskit_ibm_runtime import QiskitRuntimeService
+try:
+    from qiskit_ibm_runtime import QiskitRuntimeService, Sampler
+    from qiskit import transpile
+    from dotenv import load_dotenv
+    load_dotenv() # Load tokens from .env file if it exists
 
-service = QiskitRuntimeService(
-    channel="ibm_quantum_platform",
-    token="VoilVPZh83_0DhVdx8JdtrjqjrmowsR366tR-0tEb6ag"
-)
+    print("\n🔗 Connecting to IBM Quantum...")
+    IBM_TOKEN = os.getenv("IBM_QUANTUM_TOKEN", "VoilVPZh83_0DhVdx8JdtrjqjrmowsR366tR-0tEb6ag")
+    
+    service = QiskitRuntimeService(
+        channel="ibm_quantum_platform",
+        token=IBM_TOKEN
+    )
 
-backend = service.least_busy(simulator=False)
+    # Use a simulator if no real backend is available or for testing speed
+    try:
+        backend = service.least_busy(simulator=False, min_qubits=2)
+        print(f"✅ Using real backend: {backend.name}")
+    except:
+        backend = service.get_backend("ibmq_qasm_simulator")
+        print("ℹ️ No real backend available, falling back to simulator.")
 
-print("Using backend:", backend)
+    # ===============================
+    # RUN CIRCUIT
+    # ===============================
+    print("🚀 Transpiling and running quantum circuit...")
+    qc_transpiled = transpile(qc, backend)
+    sampler = Sampler(backend)
+    job = sampler.run([qc_transpiled], shots=1024)
 
-# ===============================
-# TRANSPILING
-# ===============================
+    # Wait for result with a timeout or error handling
+    result = job.result()
+    counts = result[0].data.c.get_counts()
 
-from qiskit import transpile
+    print("⚛️ Quantum Output Counts:", counts)
 
-qc_transpiled = transpile(qc, backend)
-
-# ===============================
-# RUN CIRCUIT
-# ===============================
-
-from qiskit_ibm_runtime import Sampler
-
-sampler = Sampler(backend)
-
-job = sampler.run([qc_transpiled], shots=1024)
-
-print("Running quantum job...")
-
-result = job.result()
-counts = result[0].data.c.get_counts()
-
-print("Quantum Output:", counts)
+except ImportError:
+    print("❌ Qiskit modules not found. Please install: pip install qiskit-ibm-runtime qiskit")
+    exit(1)
+except Exception as e:
+    print(f"❌ Quantum Execution Error: {e}")
+    print("Fallback: Using AI prediction only due to Quantum Backend failure.")
+    counts = {"00": 512, "11": 512} # Neutral fallback
 
 # ===============================
 # HYBRID DECISION LOGIC

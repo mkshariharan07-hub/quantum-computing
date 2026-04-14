@@ -1,5 +1,10 @@
 flask
 flask-cors
 numpy
-pillow
-tensorflow
+opencv-python
+joblib
+scikit-learn
+qiskit
+qiskit-ibm-runtime
+streamlit
+python-dotenv
