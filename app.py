@@ -164,23 +164,37 @@ with col2:
             qc.measure([0, 1], [0, 1])
 
             with st.status("🔗 Running Quantum Job...", expanded=False) as status:
-                IBM_TOKEN = os.getenv("IBM_QUANTUM_TOKEN", "8qygOdF_SXljNMGQdTGZEYCQqJTY62rE6eIhvUOACwTB")
-                service = QiskitRuntimeService(channel="ibm_quantum_platform", token=IBM_TOKEN)
-                
-                if backend_pref == "Simulator Only":
-                    backend = service.backend("ibmq_qasm_simulator")
+                try:
+                    IBM_TOKEN = os.getenv("IBM_QUANTUM_TOKEN", "8qygOdF_SXljNMGQdTGZEYCQqJTY62rE6eIhvUOACwTB")
+                    service = QiskitRuntimeService(channel="ibm_quantum_platform", token=IBM_TOKEN)
+                    
+                    if backend_pref == "Simulator Only":
+                        backend = service.backend("ibmq_qasm_simulator")
+                    else:
+                        try:
+                            backend = service.least_busy(simulator=False, min_qubits=2)
+                        except:
+                            backend = service.least_busy(simulator=True)
+                    
+                    status.write(f"Connected to IBM Cloud: {backend.name}")
+                    qc_transpiled = transpile(qc, backend)
+                    sampler = Sampler(backend)
+                except Exception as cloud_err:
+                    status.write("⚠️ IBM Cloud unavailable. Falling back to local simulator...")
+                    from qiskit.primitives import BasicSampler
+                    backend = None
+                    sampler = BasicSampler()
+                    qc_transpiled = qc 
+
+                if backend:
+                    job = sampler.run([qc_transpiled], shots=1024)
+                    result = job.result()
+                    counts = result[0].data.c.get_counts()
                 else:
-                    try:
-                        backend = service.least_busy(simulator=False, min_qubits=2)
-                    except:
-                        backend = service.least_busy(simulator=True)
+                    job = sampler.run([qc])
+                    result = job.result()
+                    counts = result.quasi_dist[0].binary_probabilities() # For BasicSampler
                 
-                status.write(f"Connected to: {backend.name}")
-                qc_transpiled = transpile(qc, backend)
-                sampler = Sampler(backend)
-                job = sampler.run([qc_transpiled], shots=1024)
-                result = job.result()
-                counts = result[0].data.c.get_counts()
                 status.update(label="✅ Quantum Data Received", state="complete")
 
             dominant_state = max(counts, key=counts.get)
