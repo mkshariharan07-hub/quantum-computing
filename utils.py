@@ -22,6 +22,11 @@ SCALER_PATH = "plant_scaler.pkl"
 REPORT_PATH = "training_report.txt"
 IMG_SIZE    = (128, 128)
 
+# Feature-space identifiers
+FEATURE_MODE_RAW  = "raw_pixels"    # old model: 128×128×3 = 49152 dims
+FEATURE_MODE_HIST = "histogram"     # new model: 63 dims
+RAW_PIXEL_DIM     = 128 * 128 * 3  # = 49152
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # FEATURE EXTRACTION
@@ -67,6 +72,49 @@ def extract_features(img: np.ndarray) -> np.ndarray:
 
 
 FEATURE_DIM = len(extract_features(np.zeros((8, 8, 3), dtype=np.uint8)))  # = 63
+
+
+def extract_features_raw(img: np.ndarray) -> np.ndarray:
+    """
+    Legacy extractor — raw pixel flatten (128×128×3 = 49152 dims).
+    Used automatically when the loaded model was trained this way.
+    DO NOT use for new training; use extract_features() instead.
+    """
+    return cv2.resize(img, IMG_SIZE).flatten().astype(np.float64)
+
+
+def get_feature_mode(model) -> str:
+    """
+    Inspect a loaded model and return which feature extractor it was trained with.
+
+    Returns:
+        'raw_pixels'  — model.n_features_in_ == 49152  (old pipeline)
+        'histogram'   — model.n_features_in_ == 63     (new pipeline)
+
+    Raises:
+        ValueError if the feature count is unrecognised.
+    """
+    n = model.n_features_in_
+    if n == RAW_PIXEL_DIM:
+        return FEATURE_MODE_RAW
+    if n == FEATURE_DIM:
+        return FEATURE_MODE_HIST
+    raise ValueError(
+        f"Unrecognised model feature count: {n}. "
+        f"Expected {RAW_PIXEL_DIM} (old) or {FEATURE_DIM} (new). "
+        f"Retrain with `python main.py`."
+    )
+
+
+def extract_for_model(img: np.ndarray, model) -> np.ndarray:
+    """
+    Extract features in whichever space the model was trained in.
+    Removes the need for callers to know which mode is active.
+    """
+    mode = get_feature_mode(model)
+    if mode == FEATURE_MODE_RAW:
+        return extract_features_raw(img).reshape(1, -1)
+    return extract_features(img).reshape(1, -1)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -214,19 +262,22 @@ def load_model_and_scaler():
 def predict_image(img_bgr: np.ndarray, model, scaler=None) -> dict:
     """
     Full prediction pipeline for a BGR image.
+    Auto-detects whether the model expects raw pixels (49152) or
+    histogram features (63) and extracts accordingly.
 
     Returns dict with keys:
-        plant, disease, confidence, prediction_raw, top5, severity, tips
+        plant, disease, confidence, prediction_raw, top5,
+        severity, tips, color, emoji, feature_mode
     """
-    raw = extract_features(img_bgr).reshape(1, -1)
+    # ── Auto-detect feature space ────────────────────────────────────────────
+    mode     = get_feature_mode(model)   # raises ValueError on unknown dim
+    features = extract_for_model(img_bgr, model)  # shape (1, n_features)
 
-    if raw.shape[1] != model.n_features_in_:
-        raise ValueError(
-            f"Feature mismatch: model expects {model.n_features_in_}, "
-            f"got {raw.shape[1]}. Retrain with `python main.py`."
-        )
+    # Scaler only applies to histogram-trained models (raw-pixel models
+    # have no associated scaler in the old pipeline)
+    if scaler is not None and mode == FEATURE_MODE_HIST:
+        features = scaler.transform(features)
 
-    features    = scaler.transform(raw) if scaler else raw
     prediction  = model.predict(features)[0]
     conf_probs  = model.predict_proba(features)[0]
     confidence  = float(np.max(conf_probs) * 100)
@@ -245,13 +296,14 @@ def predict_image(img_bgr: np.ndarray, model, scaler=None) -> dict:
     )[:5]
 
     return {
-        "plant":          plant,
-        "disease":        disease,
-        "confidence":     round(confidence, 2),
+        "plant":        plant,
+        "disease":      disease,
+        "confidence":   round(confidence, 2),
         "prediction_raw": prediction,
-        "top5":           top5,
-        "severity":       info["severity"],
-        "tips":           info["tips"],
-        "color":          info["color"],
-        "emoji":          info["emoji"],
+        "top5":         top5,
+        "severity":     info["severity"],
+        "tips":         info["tips"],
+        "color":        info["color"],
+        "emoji":        info["emoji"],
+        "feature_mode": mode,   # 'raw_pixels' or 'histogram'
     }

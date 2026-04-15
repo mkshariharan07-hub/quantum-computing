@@ -1,15 +1,9 @@
 """
 app.py — PlantPulse AI + Quantum  (Enhanced v2)
 =================================================
-Improvements over v1:
-  • Loads StandardScaler saved by main.py for consistent feature scaling
-  • extract_features() includes histogram normalization (matches main.py v2)
-  • Session history: stores last 5 results for comparison
-  • Sidebar shows model stats (classes, accuracy from report if available)
-  • Analysis result is downloadable as a JSON report
-  • Quantum circuit encodes more image information (entropy + mean)
-  • Lazy quantum execution: only runs if AI confidence < threshold
-  • UI: severity badge, treatment tips per disease, result history panel
+Auto-detects whether the loaded model uses raw pixels (49152) or
+histogram features (63) and extracts accordingly — no retraining needed
+for the app to work. Retrain with main.py for best accuracy.
 """
 
 import streamlit as st
@@ -21,6 +15,14 @@ import json
 import datetime
 from qiskit import QuantumCircuit, transpile
 from qiskit_ibm_runtime import QiskitRuntimeService, Sampler
+
+# Shared utilities — single source of truth for features & prediction
+from utils import (
+    predict_image, get_disease_info,
+    get_feature_mode, load_model_and_scaler,
+    FEATURE_MODE_RAW, FEATURE_MODE_HIST,
+    decode_bytes_to_bgr
+)
 
 # ===============================
 # PAGE CONFIG & STYLING
@@ -185,16 +187,18 @@ def extract_features(img: np.ndarray) -> np.ndarray:
 # MODEL & SCALER LOADING
 # ===============================
 @st.cache_resource
-def get_model_and_scaler():
-    """Load model and scaler once; cache for the app lifetime."""
-    if not os.path.exists("plant_model.pkl"):
-        st.error("🚨 Model not found! Please run `python main.py` to train first.")
+def get_cached_model():
+    """Load model and scaler once via utils; cache for the app lifetime."""
+    try:
+        return load_model_and_scaler()
+    except FileNotFoundError as e:
+        st.error(f"🚨 {e}")
         st.stop()
-    mdl = joblib.load("plant_model.pkl")
-    scl = joblib.load("plant_scaler.pkl") if os.path.exists("plant_scaler.pkl") else None
-    return mdl, scl
 
-model, scaler = get_model_and_scaler()
+model, scaler = get_cached_model()
+
+# Detect feature space once at startup
+_feature_mode = get_feature_mode(model)
 
 
 # ===============================
@@ -331,16 +335,90 @@ with st.sidebar:
     n_classes = len(model.classes_) if hasattr(model, "classes_") else "N/A"
     st.metric("Disease Classes", n_classes)
     st.metric("Features Used", model.n_features_in_)
-    if os.path.exists("plant_scaler.pkl"):
-        st.success("✅ Scaler loaded")
+
+    if _feature_mode == FEATURE_MODE_RAW:
+        st.warning(
+            "⚠️ **Legacy Model** — trained with raw pixels (49,152 features). "
+            "Run `python main.py` to retrain for much better accuracy."
+        )
     else:
-        st.warning("⚠️ No scaler — retrain with main.py")
+        st.success("✅ Enhanced model — histogram features (63 dims)")
+        if os.path.exists("plant_scaler.pkl"):
+            st.success("✅ Scaler loaded")
+        else:
+            st.warning("⚠️ No scaler — retrain with `python main.py`")
 
     if os.path.exists("training_report.txt"):
         with open("training_report.txt") as f:
             report_text = f.read()
         with st.expander("📄 Last Training Report"):
             st.code(report_text, language="text")
+
+    # ── PROJECT STATUS PANEL ──────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 🔍 Project Status")
+
+    def _status_row(label: str, ok: bool, detail: str = ""):
+        icon = "🟢" if ok else "🔴"
+        msg  = f"{icon} **{label}**"
+        if detail:
+            msg += f"  \n&nbsp;&nbsp;&nbsp;`{detail}`"
+        st.markdown(msg, unsafe_allow_html=True)
+
+    # 1. Model file
+    _status_row("Model file", os.path.exists("plant_model.pkl"),
+                "plant_model.pkl found" if os.path.exists("plant_model.pkl") else "Missing — run python main.py")
+
+    # 2. Scaler file
+    _status_row("Scaler file", os.path.exists("plant_scaler.pkl"),
+                "plant_scaler.pkl found" if os.path.exists("plant_scaler.pkl") else "Missing — retrain for best accuracy")
+
+    # 3. Model loads
+    _status_row("Model loads OK", model is not None,
+                f"{len(model.classes_)} classes, {model.n_features_in_} features" if model else "Load failed")
+
+    # 4. Feature extraction
+    try:
+        import numpy as _np
+        _dummy = _np.zeros((64, 64, 3), dtype=_np.uint8)
+        from utils import extract_features as _ef, FEATURE_DIM as _fd
+        _fv = _ef(_dummy)
+        _feat_ok = _fv.shape == (_fd,)
+    except Exception as _fe:
+        _feat_ok = False
+    _status_row("Feature extraction", _feat_ok,
+                f"Output shape: {_fv.shape[0]} dims" if _feat_ok else str(_fe))
+
+    # 5. Predict pipeline (end-to-end with dummy image)
+    try:
+        from utils import predict_image as _pi
+        _r = _pi(_dummy, model, scaler)
+        _pred_ok = "plant" in _r and "confidence" in _r
+    except Exception as _pe:
+        _pred_ok = False
+    _status_row("Predict pipeline", _pred_ok,
+                f"Returns: plant={_r.get('plant','?')}, conf={_r.get('confidence','?')}%" if _pred_ok else str(_pe))
+
+    # 6. Quantum circuit builds
+    try:
+        _qc, _ent = build_quantum_circuit(_dummy)
+        _qc_ok = _qc.num_qubits == 4
+    except Exception as _qe:
+        _qc_ok = False
+    _status_row("Quantum circuit", _qc_ok,
+                f"{_qc.num_qubits}-qubit circuit, entropy={_ent:.3f}" if _qc_ok else str(_qe))
+
+    # 7. IBM Token
+    _token = os.getenv("IBM_QUANTUM_TOKEN", "")
+    _status_row("IBM Quantum token", bool(_token),
+                "Token present" if _token else "Not set — quantum will use local simulator")
+
+    # Overall
+    _all_ok = all([os.path.exists("plant_model.pkl"), model is not None, _feat_ok, _pred_ok, _qc_ok])
+    if _all_ok:
+        st.success("✅ All systems operational")
+    else:
+        st.error("❌ One or more systems need attention (see above)")
 
     st.markdown("---")
     # Session history in sidebar
@@ -411,29 +489,19 @@ with col2:
 
     if active_img is not None:
 
-        # ── 1. CLASSICAL AI ──────────────────────────────────────
+        # ── 1. CLASSICAL AI (via utils.predict_image — auto-detects feature mode) ──
         with st.spinner("⚡ Classical AI Processing..."):
-            raw_features = extract_features(active_img).reshape(1, -1)
-
-            if raw_features.shape[1] != model.n_features_in_:
-                st.error(
-                    f"🚨 Feature mismatch: model expects {model.n_features_in_}, "
-                    f"got {raw_features.shape[1]}. Re-run `python main.py`."
-                )
+            try:
+                result     = predict_image(active_img, model, scaler)
+            except ValueError as ve:
+                st.error(f"🚨 {ve}")
                 st.stop()
 
-            # Apply scaler if available
-            features = scaler.transform(raw_features) if scaler else raw_features
-
-            prediction  = model.predict(features)[0]
-            conf_probs  = model.predict_proba(features)
-            confidence  = float(np.max(conf_probs) * 100)
-            top_classes = model.classes_
-
-            try:
-                plant, disease = prediction.split("___")
-            except Exception:
-                plant, disease = "Unknown", prediction
+            plant      = result["plant"]
+            disease    = result["disease"]
+            confidence = result["confidence"]
+            conf_probs_arr = [x["probability"] for x in result["top5"]]
+            top_classes_arr = [x["class"]      for x in result["top5"]]
 
         # Disease metadata
         info     = get_disease_info(disease)
@@ -466,10 +534,10 @@ with col2:
 
         # Top-5 probabilities
         with st.expander("📊 Full Prediction Breakdown"):
-            prob_pairs = sorted(zip(top_classes, conf_probs[0]), key=lambda x: -x[1])
-            for cls, prob in prob_pairs[:5]:
-                label = cls.replace("___", " → ").replace("_", " ").title()
-                st.markdown(f"`{label}` — **{prob*100:.1f}%**")
+            for entry in result["top5"]:
+                label = entry["class"].replace("___", " → ").replace("_", " ").title()
+                prob  = entry["probability"] / 100.0
+                st.markdown(f"`{label}` — **{entry['probability']:.1f}%**")
                 st.progress(float(prob))
 
         # ── 2. QUANTUM VERIFICATION ───────────────────────────────
