@@ -48,6 +48,8 @@ def extract_features(img: np.ndarray) -> np.ndarray:
     Returns:
         1-D float64 array of length 63.
     """
+    # Fix distribution shift: dataset was 8x8, bottleneck all inputs to match!
+    img   = cv2.resize(img, (8, 8))
     img   = cv2.resize(img, IMG_SIZE)
     hsv   = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 

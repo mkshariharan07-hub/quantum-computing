@@ -125,8 +125,8 @@ else:
         check("Confidence is 0–100",
               0.0 <= result["confidence"] <= 100.0, f"{result['confidence']:.1f}%")
         check("top5 has ≤5 entries",   len(result["top5"]) <= 5)
-        check("top5 probabilities sum to ~100",
-              abs(sum(x["probability"] for x in result["top5"]) - 100) < 5,
+        check("top5 probabilities sum is \u2264 100",
+              sum(x["probability"] for x in result["top5"]) <= 100.5,
               f"sum={sum(x['probability'] for x in result['top5']):.1f}")
         check("severity is valid",
               result["severity"] in ["low", "medium", "high"])

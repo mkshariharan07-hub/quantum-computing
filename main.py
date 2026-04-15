@@ -13,6 +13,11 @@ Fixes vs old training:
 """
 
 import sys
+
+# Force UTF-8 encoding for standard output to avoid Windows console errors with emojis
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import numpy as np
 import os
 import joblib
@@ -40,7 +45,9 @@ random.seed(SEED)
 
 def _safe_extract(img: np.ndarray) -> np.ndarray:
     try:
-        return extract_features(img.astype("uint8"))
+        # dataset is in RGB, but extract_features expects BGR
+        img_bgr = cv2.cvtColor(img.astype("uint8"), cv2.COLOR_RGB2BGR)
+        return extract_features(img_bgr)
     except Exception:
         return np.zeros(FEATURE_DIM)
 
