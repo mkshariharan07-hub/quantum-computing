@@ -1,0 +1,19 @@
+PlantPulse Training Report
+=======================================================
+Mode          : fast
+Feature dims  : 63 (histogram-based)
+Test Accuracy : 97.70%
+
+                             precision    recall  f1-score   support
+
+         Apple___Apple_scab       0.96      1.00      0.98       403
+            Apple___healthy       0.96      0.97      0.97       402
+Corn_(maize)___Common_rust_       0.99      1.00      0.99       382
+      Potato___Early_blight       0.99      0.99      0.99       388
+           Potato___healthy       0.99      0.99      0.99       365
+       Tomato___Late_blight       0.98      0.90      0.94       373
+           Tomato___healthy       0.97      0.98      0.98       385
+
+                   accuracy                           0.98      2698
+                  macro avg       0.98      0.98      0.98      2698
+               weighted avg       0.98      0.98      0.98      2698
