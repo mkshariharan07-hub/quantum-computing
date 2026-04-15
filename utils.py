@@ -1,0 +1,257 @@
+"""
+utils.py — PlantPulse Shared Utilities
+=======================================
+Single source of truth for:
+  • Feature extraction  (used by main.py, app.py, server.py)
+  • Artifact paths
+  • Disease knowledge base
+  • Image decoding helpers
+
+RULE: Any change to extract_features() is made HERE only.
+      All other files import from this module.
+"""
+
+import cv2
+import numpy as np
+import os
+from typing import Optional
+
+# ── Artifact paths (one place to change if you move files) ────────────────────
+MODEL_PATH  = "plant_model.pkl"
+SCALER_PATH = "plant_scaler.pkl"
+REPORT_PATH = "training_report.txt"
+IMG_SIZE    = (128, 128)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FEATURE EXTRACTION
+# ═══════════════════════════════════════════════════════════════════════════════
+def extract_features(img: np.ndarray) -> np.ndarray:
+    """
+    Deterministic, normalized feature vector (63 dims).
+
+    Feature layout:
+      [0:24]  — Hue histogram, 24 bins, normalized to sum=1
+      [24:40] — Saturation histogram, 16 bins, normalized
+      [40:56] — Value histogram, 16 bins, normalized
+      [56:59] — BGR channel means  (divided by 255)
+      [59:62] — BGR channel stds   (divided by 255)
+      [62]    — Canny edge density (0–1)
+
+    Args:
+        img: BGR image as uint8 numpy array (any size).
+    Returns:
+        1-D float64 array of length 63.
+    """
+    img   = cv2.resize(img, IMG_SIZE)
+    hsv   = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+    # Color histograms — normalized to unit sum
+    h_hist = cv2.calcHist([hsv], [0], None, [24], [0, 180]).flatten()
+    s_hist = cv2.calcHist([hsv], [1], None, [16], [0, 256]).flatten()
+    v_hist = cv2.calcHist([hsv], [2], None, [16], [0, 256]).flatten()
+    h_hist /= (h_hist.sum() + 1e-7)
+    s_hist /= (s_hist.sum() + 1e-7)
+    v_hist /= (v_hist.sum() + 1e-7)
+
+    # Per-channel mean & std (scaled 0–1)
+    means, stds = cv2.meanStdDev(img)
+    stats = np.concatenate([means.flatten(), stds.flatten()]) / 255.0
+
+    # Edge density
+    gray  = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 100, 200)
+    edge_density = float(np.sum(edges > 0)) / (IMG_SIZE[0] * IMG_SIZE[1])
+
+    return np.concatenate([h_hist, s_hist, v_hist, stats, [edge_density]])
+
+
+FEATURE_DIM = len(extract_features(np.zeros((8, 8, 3), dtype=np.uint8)))  # = 63
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# IMAGE DECODING
+# ═══════════════════════════════════════════════════════════════════════════════
+def decode_bytes_to_bgr(raw_bytes: bytes) -> Optional[np.ndarray]:
+    """
+    Decode raw image bytes → BGR ndarray.
+    Returns None if bytes are empty or decoding fails.
+    """
+    if not raw_bytes:
+        return None
+    arr = np.asarray(bytearray(raw_bytes), dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    return img  # None on failure
+
+
+def decode_file_to_bgr(path: str) -> Optional[np.ndarray]:
+    """Read an image file from disk → BGR ndarray."""
+    return cv2.imread(path, cv2.IMREAD_COLOR)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DISEASE KNOWLEDGE BASE
+# ═══════════════════════════════════════════════════════════════════════════════
+DISEASE_INFO: dict[str, dict] = {
+    "healthy": {
+        "severity": "low",
+        "color":    "#10b981",
+        "emoji":    "🌱",
+        "tips":     "No treatment needed. Maintain regular watering and sunlight.",
+    },
+    "early_blight": {
+        "severity": "medium",
+        "color":    "#f59e0b",
+        "emoji":    "🟡",
+        "tips":     "Remove affected leaves. Apply copper-based fungicide. Avoid overhead watering.",
+    },
+    "late_blight": {
+        "severity": "high",
+        "color":    "#ef4444",
+        "emoji":    "🔴",
+        "tips":     "Isolate plant immediately. Apply mancozeb or chlorothalonil. Destroy infected tissue.",
+    },
+    "leaf_mold": {
+        "severity": "medium",
+        "color":    "#f97316",
+        "emoji":    "🟠",
+        "tips":     "Improve air circulation. Apply fungicide. Reduce ambient humidity.",
+    },
+    "bacterial_spot": {
+        "severity": "high",
+        "color":    "#ef4444",
+        "emoji":    "🔴",
+        "tips":     "Use copper-based bactericide. Avoid working with wet plants.",
+    },
+    "common_rust": {
+        "severity": "medium",
+        "color":    "#f97316",
+        "emoji":    "🟠",
+        "tips":     "Apply triazole fungicide early. Rotate crops next season.",
+    },
+    "northern_leaf_blight": {
+        "severity": "high",
+        "color":    "#ef4444",
+        "emoji":    "🔴",
+        "tips":     "Apply fungicide at first sign. Use resistant varieties next cycle.",
+    },
+    "gray_leaf_spot": {
+        "severity": "medium",
+        "color":    "#f59e0b",
+        "emoji":    "🟡",
+        "tips":     "Improve drainage. Apply strobilurin fungicide preventively.",
+    },
+    "powdery_mildew": {
+        "severity": "medium",
+        "color":    "#f59e0b",
+        "emoji":    "🟡",
+        "tips":     "Apply sulfur or potassium bicarbonate spray. Ensure good airflow.",
+    },
+    "target_spot": {
+        "severity": "medium",
+        "color":    "#f97316",
+        "emoji":    "🟠",
+        "tips":     "Remove infected leaves. Apply chlorothalonil or mancozeb.",
+    },
+    "mosaic_virus": {
+        "severity": "high",
+        "color":    "#ef4444",
+        "emoji":    "🔴",
+        "tips":     "No cure — remove and destroy infected plants. Control aphid vectors.",
+    },
+    "yellow_leaf_curl_virus": {
+        "severity": "high",
+        "color":    "#ef4444",
+        "emoji":    "🔴",
+        "tips":     "Remove infected plants. Use reflective mulches to deter whiteflies.",
+    },
+}
+
+_FALLBACK_INFO = {
+    "severity": "medium",
+    "color":    "#f59e0b",
+    "emoji":    "⚠️",
+    "tips":     "Consult an agronomist for targeted treatment advice.",
+}
+
+
+def get_disease_info(disease: str) -> dict:
+    """
+    Lookup disease metadata by fuzzy key match.
+    Falls back gracefully if disease is unknown.
+
+    Args:
+        disease: Raw disease string (e.g. 'Early_blight', 'Late blight').
+    Returns:
+        Dict with keys: severity, color, emoji, tips.
+    """
+    key = disease.lower().replace(" ", "_")
+    for k, v in DISEASE_INFO.items():
+        if k in key or key in k:
+            return v
+    return _FALLBACK_INFO
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ARTIFACT LOADING HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+def load_model_and_scaler():
+    """
+    Load plant_model.pkl and plant_scaler.pkl from disk.
+    Returns (model, scaler). scaler may be None if not found.
+    Raises FileNotFoundError if model is missing.
+    """
+    import joblib
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError(
+            f"Model not found at '{MODEL_PATH}'. Run `python main.py` to train."
+        )
+    model  = joblib.load(MODEL_PATH)
+    scaler = joblib.load(SCALER_PATH) if os.path.exists(SCALER_PATH) else None
+    return model, scaler
+
+
+def predict_image(img_bgr: np.ndarray, model, scaler=None) -> dict:
+    """
+    Full prediction pipeline for a BGR image.
+
+    Returns dict with keys:
+        plant, disease, confidence, prediction_raw, top5, severity, tips
+    """
+    raw = extract_features(img_bgr).reshape(1, -1)
+
+    if raw.shape[1] != model.n_features_in_:
+        raise ValueError(
+            f"Feature mismatch: model expects {model.n_features_in_}, "
+            f"got {raw.shape[1]}. Retrain with `python main.py`."
+        )
+
+    features    = scaler.transform(raw) if scaler else raw
+    prediction  = model.predict(features)[0]
+    conf_probs  = model.predict_proba(features)[0]
+    confidence  = float(np.max(conf_probs) * 100)
+
+    try:
+        plant, disease = prediction.split("___")
+    except ValueError:
+        plant, disease = "Unknown", prediction
+
+    info = get_disease_info(disease)
+
+    top5 = sorted(
+        [{"class": c, "probability": round(float(p) * 100, 2)}
+         for c, p in zip(model.classes_, conf_probs)],
+        key=lambda x: -x["probability"]
+    )[:5]
+
+    return {
+        "plant":          plant,
+        "disease":        disease,
+        "confidence":     round(confidence, 2),
+        "prediction_raw": prediction,
+        "top5":           top5,
+        "severity":       info["severity"],
+        "tips":           info["tips"],
+        "color":          info["color"],
+        "emoji":          info["emoji"],
+    }
