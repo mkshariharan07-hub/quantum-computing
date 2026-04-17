@@ -33,44 +33,16 @@ RAW_PIXEL_DIM     = 128 * 128 * 3  # = 49152
 # ═══════════════════════════════════════════════════════════════════════════════
 def extract_features(img: np.ndarray) -> np.ndarray:
     """
-    Deterministic, normalized feature vector (63 dims).
-
-    Feature layout:
-      [0:24]  — Hue histogram, 24 bins, normalized to sum=1
-      [24:40] — Saturation histogram, 16 bins, normalized
-      [40:56] — Value histogram, 16 bins, normalized
-      [56:59] — BGR channel means  (divided by 255)
-      [59:62] — BGR channel stds   (divided by 255)
-      [62]    — Canny edge density (0–1)
-
-    Args:
-        img: BGR image as uint8 numpy array (any size).
-    Returns:
-        1-D float64 array of length 63.
+    192-dim spatial color feature vector.
+    Resizes image to 8x8 and flattens it. This correctly handles the
+    underlying 8x8 dataset resolution while preserving local color
+    relationships which the histogram method destroyed.
     """
-    # Fix distribution shift: dataset was 8x8, bottleneck all inputs to match!
-    img   = cv2.resize(img, (8, 8))
-    img   = cv2.resize(img, IMG_SIZE)
-    hsv   = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-    # Color histograms — normalized to unit sum
-    h_hist = cv2.calcHist([hsv], [0], None, [24], [0, 180]).flatten()
-    s_hist = cv2.calcHist([hsv], [1], None, [16], [0, 256]).flatten()
-    v_hist = cv2.calcHist([hsv], [2], None, [16], [0, 256]).flatten()
-    h_hist /= (h_hist.sum() + 1e-7)
-    s_hist /= (s_hist.sum() + 1e-7)
-    v_hist /= (v_hist.sum() + 1e-7)
-
-    # Per-channel mean & std (scaled 0–1)
-    means, stds = cv2.meanStdDev(img)
-    stats = np.concatenate([means.flatten(), stds.flatten()]) / 255.0
-
-    # Edge density
-    gray  = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 100, 200)
-    edge_density = float(np.sum(edges > 0)) / (IMG_SIZE[0] * IMG_SIZE[1])
-
-    return np.concatenate([h_hist, s_hist, v_hist, stats, [edge_density]])
+    # Resize to exactly 8x8 to match dataset & prevent distribution shift
+    img_8x8 = cv2.resize(img, (8, 8))
+    
+    # Flatten and normalize to 0-1 range
+    return (img_8x8.flatten() / 255.0).astype(np.float64)
 
 
 FEATURE_DIM = len(extract_features(np.zeros((8, 8, 3), dtype=np.uint8)))  # = 63
