@@ -26,8 +26,10 @@ IMG_SIZE    = (128, 128)
 
 # Feature-space identifiers
 FEATURE_MODE_RAW  = "raw_pixels"    # old model: 128×128×3 = 49152 dims
-FEATURE_MODE_HIST = "histogram"     # new model: 63 dims
+FEATURE_MODE_HIST = "histogram"     # new model: 63 dims (v2) or 192 dims (v3)
 RAW_PIXEL_DIM     = 128 * 128 * 3  # = 49152
+HIST_DIM_V2       = 63
+HIST_DIM_V3       = 192
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -35,16 +37,30 @@ RAW_PIXEL_DIM     = 128 * 128 * 3  # = 49152
 # ═══════════════════════════════════════════════════════════════════════════════
 def extract_features(img: np.ndarray) -> np.ndarray:
     """
-    192-dim spatial color feature vector.
-    Resizes image to 8x8 and flattens it. This correctly handles the
-    underlying 8x8 dataset resolution while preserving local color
-    relationships which the histogram method destroyed.
+    v3: 192-dim spatial color feature vector (8x8x3).
     """
-    # Resize to exactly 8x8 to match dataset & prevent distribution shift
     img_8x8 = cv2.resize(img, (8, 8))
-    
-    # Flatten and normalize to 0-1 range
     return (img_8x8.flatten() / 255.0).astype(np.float64)
+
+
+def extract_features_v2(img: np.ndarray) -> np.ndarray:
+    """
+    v2: 63-dim histogram-based feature vector.
+    Used for legacy compatibility with current model.
+    """
+    img_res = cv2.resize(img, (128, 128))
+    hsv = cv2.cvtColor(img_res, cv2.COLOR_BGR2HSV)
+    h_hist = cv2.calcHist([hsv], [0], None, [24], [0, 180]).flatten()
+    s_hist = cv2.calcHist([hsv], [1], None, [16], [0, 256]).flatten()
+    v_hist = cv2.calcHist([hsv], [2], None, [16], [0, 256]).flatten()
+    h_hist /= (h_hist.sum() + 1e-7)
+    s_hist /= (s_hist.sum() + 1e-7)
+    v_hist /= (v_hist.sum() + 1e-7)
+    means, stds = cv2.meanStdDev(img_res)
+    stats = np.concatenate([means.flatten(), stds.flatten()]) / 255.0
+    edges = cv2.Canny(cv2.cvtColor(img_res, cv2.COLOR_BGR2GRAY), 100, 200)
+    edge_density = np.sum(edges > 0) / (128 * 128)
+    return np.concatenate([h_hist, s_hist, v_hist, stats, [edge_density]])
 
 
 FEATURE_DIM = len(extract_features(np.zeros((8, 8, 3), dtype=np.uint8)))  # = 63
@@ -73,11 +89,11 @@ def get_feature_mode(model) -> str:
     n = model.n_features_in_
     if n == RAW_PIXEL_DIM:
         return FEATURE_MODE_RAW
-    if n == FEATURE_DIM:
+    if n in [HIST_DIM_V2, HIST_DIM_V3]:
         return FEATURE_MODE_HIST
     raise ValueError(
         f"Unrecognised model feature count: {n}. "
-        f"Expected {RAW_PIXEL_DIM} (old) or {FEATURE_DIM} (new). "
+        f"Expected {RAW_PIXEL_DIM} (old), {HIST_DIM_V2} (v2), or {HIST_DIM_V3} (v3). "
         f"Retrain with `python main.py`."
     )
 
@@ -85,11 +101,13 @@ def get_feature_mode(model) -> str:
 def extract_for_model(img: np.ndarray, model) -> np.ndarray:
     """
     Extract features in whichever space the model was trained in.
-    Removes the need for callers to know which mode is active.
     """
-    mode = get_feature_mode(model)
-    if mode == FEATURE_MODE_RAW:
+    n = model.n_features_in_
+    if n == RAW_PIXEL_DIM:
         return extract_features_raw(img).reshape(1, -1)
+    if n == HIST_DIM_V2:
+        return extract_features_v2(img).reshape(1, -1)
+    # Default to V3 if 192 or unknown (get_feature_mode will catch errors)
     return extract_features(img).reshape(1, -1)
 
 
@@ -467,3 +485,20 @@ def generate_bio_signatures(img: np.ndarray, health_index: int) -> Dict[str, flo
         "Metabolic": round(min(metabolic, 100), 1),
         "Spectral UV": round(np.random.uniform(70, 95), 1)
     }
+def get_health_forecast(health_index: int, severity: str) -> Dict[str, Any]:
+    """
+    Simulates a 10-day health trajectory.
+    """
+    days = list(range(1, 11))
+    decay = 5 if severity == "high" else (2 if severity == "medium" else 0.5)
+    points = [max(0, health_index - (d * decay) + np.random.randint(-2, 3)) for d in days]
+    return {"days": days, "index": points}
+
+
+def get_global_spread(disease: str) -> Dict[str, Any]:
+    """
+    Simulates global disease distribution data.
+    """
+    regions = ["North America", "South America", "Europe", "Asia", "Africa", "Oceania"]
+    impact = [np.random.randint(10, 90) for _ in regions]
+    return dict(zip(regions, impact))
