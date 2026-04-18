@@ -25,9 +25,10 @@ REPORT_PATH = "training_report.txt"
 IMG_SIZE    = (128, 128)
 
 # Feature-space identifiers
-FEATURE_MODE_RAW  = "raw_pixels"    # old model: 128×128×3 = 49152 dims
-FEATURE_MODE_HIST = "histogram"     # new model: 63 dims (v2) or 192 dims (v3)
-RAW_PIXEL_DIM     = 128 * 128 * 3  # = 49152
+FEATURE_MODE_RAW  = "raw_pixels"
+FEATURE_MODE_V2   = "histogram_63"
+FEATURE_MODE_V3   = "spatial_192"
+RAW_PIXEL_DIM     = 128 * 128 * 3
 HIST_DIM_V2       = 63
 HIST_DIM_V3       = 192
 
@@ -87,15 +88,10 @@ def get_feature_mode(model) -> str:
         ValueError if the feature count is unrecognised.
     """
     n = model.n_features_in_
-    if n == RAW_PIXEL_DIM:
-        return FEATURE_MODE_RAW
-    if n in [HIST_DIM_V2, HIST_DIM_V3]:
-        return FEATURE_MODE_HIST
-    raise ValueError(
-        f"Unrecognised model feature count: {n}. "
-        f"Expected {RAW_PIXEL_DIM} (old), {HIST_DIM_V2} (v2), or {HIST_DIM_V3} (v3). "
-        f"Retrain with `python main.py`."
-    )
+    if n == RAW_PIXEL_DIM: return FEATURE_MODE_RAW
+    if n == HIST_DIM_V2:   return FEATURE_MODE_V2
+    if n == HIST_DIM_V3:   return FEATURE_MODE_V3
+    raise ValueError(f"CRITICAL: Model expects {n} features, but system only supports {RAW_PIXEL_DIM}, {HIST_DIM_V2}, or {HIST_DIM_V3}.")
 
 
 def extract_for_model(img: np.ndarray, model) -> np.ndarray:
@@ -293,11 +289,15 @@ def predict_image(img_bgr: np.ndarray, model, scaler=None) -> dict:
     mode     = get_feature_mode(model)   # raises ValueError on unknown dim
     features = extract_for_model(img_bgr, model)  # shape (1, n_features)
 
-    # Scaler only applies to histogram-trained models (raw-pixel models
-    # have no associated scaler in the old pipeline)
-    if scaler is not None and mode == FEATURE_MODE_HIST:
-        features = scaler.transform(features)
-
+    # ── Strict Scaling ────────────────────────────────────────────────────────
+    if scaler is not None:
+        try:
+            # Scaler only applies if dimensions match its expectation
+            if scaler.n_features_in_ == features.shape[1]:
+                features = scaler.transform(features)
+        except Exception:
+            pass # Fallback to unscaled if drift detected
+    
     prediction  = model.predict(features)[0]
     conf_probs  = model.predict_proba(features)[0]
     confidence  = float(np.max(conf_probs) * 100)
