@@ -15,7 +15,13 @@ import time
 import requests
 import plotly.graph_objects as go
 from qiskit import QuantumCircuit
-from qiskit.primitives import Sampler
+try:
+    from qiskit.primitives import StatevectorSampler as Sampler
+except ImportError:
+    try:
+        from qiskit.primitives import Sampler
+    except ImportError:
+        Sampler = None
 from dotenv import load_dotenv
 
 # Load API keys from .env
@@ -164,6 +170,10 @@ st.markdown(f"""
 # ===============================
 def run_god_quantum_trace(img):
     try:
+        # Check if qiskit is properly loaded
+        if Sampler is None:
+            return None, 0.45
+            
         gray = cv2.cvtColor(cv2.resize(img, (16,16)), cv2.COLOR_BGR2GRAY)
         val = np.mean(gray) / 255.0
         qc = QuantumCircuit(4)
@@ -171,9 +181,8 @@ def run_god_quantum_trace(img):
         qc.rx(val * np.pi, range(4))
         qc.cx(0,1); qc.cx(2,3)
         qc.measure_all()
-        # Simulated measurement
         return qc, round(val + 0.1, 3)
-    except:
+    except Exception:
         return None, 0.5
 
 # ===============================
