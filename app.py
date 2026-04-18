@@ -28,7 +28,7 @@ load_dotenv()
 from utils import (
     get_disease_info, decode_bytes_to_bgr, identify_plant_plantnet,
     get_plant_details, get_care_tips, calculate_health_index,
-    get_weather_context, generate_bio_signatures, SystemAuditor,
+    get_nasa_context, generate_bio_signatures, SystemAuditor,
     get_health_forecast, get_global_spread
 )
 
@@ -134,6 +134,21 @@ st.markdown(f"""
 st.markdown("<h1 class='hybrid-title'>QUANTUM HYBRID</h1>", unsafe_allow_html=True)
 st.markdown("<p style='opacity:0.5; margin-bottom:40px;'>No Dataset Required. Pure Cloud-Quantum Intelligence.</p>", unsafe_allow_html=True)
 
+with st.sidebar:
+    st.markdown("<h2 style='color:#818cf8;'>MISSION CONTROL</h2>", unsafe_allow_html=True)
+    st.divider()
+    
+    st.subheader("🛰️ Global Climactic Sink")
+    nasa = get_nasa_context()
+    st.markdown(f"**Solar Induction:** `{nasa['solar_induction']}`")
+    st.markdown(f"**Est. Soil Moisture:** `{nasa['soil_moisture']}`")
+    st.markdown(f"**Daily Precipitation:** `{nasa['precipitation']}`")
+    st.caption(f"Source: {nasa['provider']}")
+    
+    st.divider()
+    st.toggle("Quantum Acceleration", value=True)
+    st.toggle("Satellite Cloud Sync", value=True)
+
 col_in, col_res = st.columns([1, 1], gap="large")
 
 with col_in:
@@ -212,7 +227,7 @@ if img is not None:
                 st.link_button("🎁 Purchase Supplies", info["buy_link"])
             st.markdown("---")
 
-        tabs = st.tabs(["📊 Metadata", "⚛️ Quantum Circuit", "🛰️ Research"])
+        tab1, tab2, tab3 = st.tabs(["📊 Metadata", "⚛️ Quantum Circuit", "🛰️ Research"])
         with tab1:
             st.info(f"**Pathological Status:** {q_label.replace('_',' ').title()}")
             st.warning(f"**Action:** {info['tips']}")
