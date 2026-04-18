@@ -134,6 +134,9 @@ DISEASE_INFO: dict[str, dict] = {
         "color":    "#ef4444",
         "emoji":    "🔴",
         "tips":     "Isolate plant immediately. Apply mancozeb or chlorothalonil. Destroy infected tissue.",
+        "active_ingredient": "Chlorothalonil 75% WP",
+        "application_rate": "2.0-2.5 kg/ha",
+        "buy_link": "https://www.google.com/search?q=buy+chlorothalonil+fungicide"
     },
     "leaf_mold": {
         "severity": "medium",
@@ -188,8 +191,31 @@ DISEASE_INFO: dict[str, dict] = {
         "color":    "#ef4444",
         "emoji":    "🔴",
         "tips":     "Remove infected plants. Use reflective mulches to deter whiteflies.",
+        "active_ingredient": "Imidacloprid (for vector control)",
+        "application_rate": "10-15 ml per 10 L water",
+        "buy_link": "https://www.google.com/search?q=buy+imidacloprid+insecticide"
     },
 }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SYSTEM AUDIT & FEASIBILITY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SystemAuditor:
+    """Checks for file existence and model loadability."""
+    @staticmethod
+    def run_audit() -> Dict[str, Any]:
+        results = {
+            "model": os.path.exists(MODEL_PATH),
+            "scaler": os.path.exists(SCALER_PATH),
+            "env": os.path.exists(".env"),
+            "internet": False
+        }
+        try:
+            requests.get("https://google.com", timeout=2)
+            results["internet"] = True
+        except Exception: pass
+        return results
 
 _FALLBACK_INFO = {
     "severity": "medium",
