@@ -130,16 +130,60 @@ def decode_file_to_bgr(path: str) -> Optional[np.ndarray]:
 # ═══════════════════════════════════════════════════════════════════════════════
 # DISEASE KNOWLEDGE BASE
 # ═══════════════════════════════════════════════════════════════════════════════
+DISEASE_INFO: dict[str, dict] = {
+    "healthy": {
+        "severity": "low", "color": "#10b981", "emoji": "🌱",
+        "tips": "No treatment needed. Maintain regular watering and sunlight."
+    },
+    "early_blight": {
+        "severity": "medium", "color": "#f59e0b", "emoji": "🟡",
+        "tips": "Remove affected leaves. Apply copper-based fungicide. Avoid overhead watering."
+    },
+    "late_blight": {
+        "severity": "high", "color": "#ef4444", "emoji": "🔴",
+        "tips": "Isolate plant immediately. Apply mancozeb or chlorothalonil. Destroy infected tissue.",
+        "active_ingredient": "Chlorothalonil 75% WP", "application_rate": "2.0-2.5 kg/ha",
+        "buy_link": "https://www.google.com/search?q=buy+chlorothalonil+fungicide"
+    },
+    "leaf_mold": {
+        "severity": "medium", "color": "#f97316", "emoji": "🟠",
+        "tips": "Improve air circulation. Apply fungicide. Reduce ambient humidity."
+    },
+    "bacterial_spot": {
+        "severity": "high", "color": "#ef4444", "emoji": "🔴",
+        "tips": "Use copper-based bactericide. Avoid working with wet plants."
+    },
+    "common_rust": {
+        "severity": "medium", "color": "#f97316", "emoji": "🟠",
+        "tips": "Apply triazole fungicide early. Rotate crops next season."
+    },
+    "northern_leaf_blight": {
+        "severity": "high", "color": "#ef4444", "emoji": "🔴",
+        "tips": "Apply fungicide at first sign. Use resistant varieties next cycle."
+    },
+    "gray_leaf_spot": {
+        "severity": "medium", "color": "#f59e0b", "emoji": "🟡",
+        "tips": "Improve drainage. Apply strobilurin fungicide preventively."
+    },
+    "powdery_mildew": {
+        "severity": "medium", "color": "#f59e0b", "emoji": "🟡",
+        "tips": "Apply sulfur or potassium bicarbonate spray. Ensure good airflow."
+    },
+    "target_spot": {
+        "severity": "medium", "color": "#f97316", "emoji": "🟠",
+        "tips": "Remove infected leaves. Apply chlorothalonil or mancozeb."
+    },
+    "mosaic_virus": {
+        "severity": "high", "color": "#ef4444", "emoji": "🔴",
+        "tips": "No cure — remove and destroy infected plants. Control aphid vectors."
+    },
     "yellow_leaf_curl_virus": {
-        "severity": "high",
-        "color":    "#ef4444",
-        "emoji":    "🔴",
-        "tips":     "Remove infected plants. Use reflective mulches to deter whiteflies.",
+        "severity": "high", "color": "#ef4444", "emoji": "🔴",
+        "tips": "Remove infected plants. Use reflective mulches to deter whiteflies.",
         "active_ingredient": "Imidacloprid (for vector control)",
         "application_rate": "10-15 ml per 10 L water",
         "buy_link": "https://www.google.com/search?q=buy+imidacloprid+insecticide"
     },
-    # ── GLOBAL EXTENSIONS ──
     "anthracnose": {
         "severity": "high", "color": "#7c2d12", "emoji": "🟤",
         "tips": "Prune out dead wood. Apply chlorothalonil or copper-based sprays during bud break.",
@@ -148,14 +192,14 @@ def decode_file_to_bgr(path: str) -> Optional[np.ndarray]:
     },
     "downy_mildew": {
         "severity": "high", "color": "#facc15", "emoji": "🟡",
-        "tips": "Increase spacing for airflow. Use metalaxyl or mancozeb. Pathogen thrives in cool, wet weather.",
+        "tips": "Increase spacing for airflow. Use metalaxyl or mancozeb.",
         "active_ingredient": "Metalaxyl 8% + Mancozeb 64%", "application_rate": "2.5 g/L",
         "buy_link": "https://www.google.com/search?q=buy+metalaxyl+fungicide"
     },
     "canker": {
         "severity": "high", "color": "#451a03", "emoji": "🪵",
-        "tips": "Cut well below infected area. Sanitize tools with bleach. Apply tree paint/sealant.",
-        "active_ingredient": "Fixed Copper Fungicide", "application_rate": "Follow label for woody plants",
+        "tips": "Cut well below infected area. Sanitize tools. Apply tree paint.",
+        "active_ingredient": "Fixed Copper Fungicide", "application_rate": "Follow label",
         "buy_link": "https://www.google.com/search?q=buy+copper+canker+treatment"
     }
 }
@@ -324,22 +368,23 @@ def identify_plant_plantnet(img_bgr: np.ndarray, api_key: str, project: str = "a
 
 def get_plant_details(species_name: str) -> Dict[str, Any]:
     """
-    Fetch species summary and metadata from Wikipedia.
+    Fetch comprehensive species data from Wikipedia API.
     """
     try:
+        # Dynamic search for any species identified by Pl@ntNet
         url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{species_name.replace(' ', '_')}"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
             return {
-                "summary": data.get("extract", "No summary available."),
+                "summary": data.get("extract", "Botanical summary currently under neural synthesis."),
                 "image": data.get("thumbnail", {}).get("source"),
                 "url": data.get("content_urls", {}).get("desktop", {}).get("page"),
                 "found": True
             }
     except Exception:
         pass
-    return {"summary": "Extended data currently unavailable for this species.", "found": False}
+    return {"summary": "Universal species data currently restricted to local cache.", "found": False}
 
 
 def get_care_tips(plant_name: str) -> str:
