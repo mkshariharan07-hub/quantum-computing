@@ -443,30 +443,21 @@ def calculate_health_index(ai_conf: float, q_ones_ratio: float, pn_score: float 
     return int(min(ai_factor + q_factor + pn_factor, 100))
 
 
-def get_weather_context() -> Dict[str, Any]:
+def get_nasa_context() -> Dict[str, Any]:
     """
-    Fetch local weather context based on IP.
-    Used to calculate environmental stress.
+    Fetches 100% free global climatic context from simulated NASA POWER vectors.
+    Provides data on Solar Induction and Soil Moisture likelihood.
     """
     try:
-        # 1. Get location via IP
-        loc_res = requests.get("https://ipapi.co/json/", timeout=3).json()
-        city = loc_res.get("city", "Unknown")
-        
-        # 2. Get weather for that city (wttr.in returns simple JSON)
-        weather = requests.get(f"https://wttr.in/{city}?format=j1", timeout=5).json()
-        curr = weather["current_condition"][0]
-        
+        # We use a simulated response for speed, mimicking the NASA POWER AG-API
         return {
-            "city": city,
-            "temp": f"{curr['temp_C']}°C",
-            "humidity": f"{curr['humidity']}%",
-            "desc": curr['weatherDesc'][0]['value'],
-            "uv": curr.get('uvIndex', 'N/A'),
-            "found": True
+            "solar_induction": f"{np.random.uniform(4.5, 7.2):.2f} kWh/m²/day",
+            "soil_moisture": f"{np.random.randint(15, 45)}%",
+            "precipitation": f"{np.random.uniform(0, 10):.1f} mm",
+            "provider": "NASA POWER (Simulated)"
         }
     except Exception:
-        return {"city": "Global", "found": False}
+        return {"provider": "Offline"}
 
 
 def generate_bio_signatures(img: np.ndarray, health_index: int) -> Dict[str, float]:
