@@ -14,7 +14,9 @@ RULE: Any change to extract_features() is made HERE only.
 import cv2
 import numpy as np
 import os
-from typing import Optional
+import requests
+import json
+from typing import Optional, Dict, Any
 
 # ── Artifact paths (one place to change if you move files) ────────────────────
 MODEL_PATH  = "plant_model.pkl"
@@ -280,4 +282,162 @@ def predict_image(img_bgr: np.ndarray, model, scaler=None) -> dict:
         "color":        info["color"],
         "emoji":        info["emoji"],
         "feature_mode": mode,   # 'raw_pixels' or 'histogram'
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLANTNET API INTEGRATION
+# ═══════════════════════════════════════════════════════════════════════════════
+def identify_plant_plantnet(img_bgr: np.ndarray, api_key: str, project: str = "all") -> Dict[str, Any]:
+    """
+    Identifies a plant using the Pl@ntNet API.
+    
+    Args:
+        img_bgr: Image in BGR format (OpenCV default).
+        api_key: Pl@ntNet API key.
+        project: Pl@ntNet project (default "all").
+        
+    Returns:
+        Dictionary with identification results or error info.
+    """
+    if not api_key:
+        return {"error": "Pl@ntNet API key not provided."}
+
+    # Encode image to JPEG
+    success, buffer = cv2.imencode(".jpg", img_bgr)
+    if not success:
+        return {"error": "Failed to encode image for Pl@ntNet API."}
+
+    endpoint = f"https://my-api.plantnet.org/v2/identify/{project}?api-key={api_key}"
+    
+    files = [
+        ('images', ('image.jpg', buffer.tobytes(), 'image/jpeg'))
+    ]
+    data = {
+        'organs': ['leaf']
+    }
+
+    try:
+        response = requests.post(endpoint, files=files, data=data, timeout=15)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Pl@ntNet API request failed: {str(e)}"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ENHANCED ECOSYSTEM KNOWLEDGE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_plant_details(species_name: str) -> Dict[str, Any]:
+    """
+    Fetch species summary and metadata from Wikipedia.
+    """
+    try:
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{species_name.replace(' ', '_')}"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                "summary": data.get("extract", "No summary available."),
+                "image": data.get("thumbnail", {}).get("source"),
+                "url": data.get("content_urls", {}).get("desktop", {}).get("page"),
+                "found": True
+            }
+    except Exception:
+        pass
+    return {"summary": "Extended data currently unavailable for this species.", "found": False}
+
+
+def get_care_tips(plant_name: str) -> str:
+    """
+    Context-aware plant care generator.
+    """
+    tips = {
+        "tomato": "Keep soil consistently moist. Support with stakes. Provide 6-8 hours of direct sun.",
+        "potato": "Hill soil around stems as they grow. Water deeply during flowering.",
+        "corn": "Plant in blocks for pollination. Ensure high nitrogen soil and frequent watering.",
+        "pepper": "Avoid overwatering young plants. Keep in warm, bright locations.",
+        "grape": "Prune during dormancy. Ensure good drainage and air circulation to prevent rot.",
+        "apple": "Thin fruit to prevent branch breakage. Prune for sunlight penetration.",
+    }
+    name = plant_name.lower()
+    for key, tip in tips.items():
+        if key in name:
+            return tip
+    return "Ensure proper soil drainage and consistent sunlight. Monitor for pests weekly."
+
+
+def calculate_health_index(ai_conf: float, q_ones_ratio: float, pn_score: float = 0.0) -> int:
+    """
+    Generates a unified 'Plant Pulse' score (0-100).
+    Higher is better.
+    """
+    # 1. AI factor (0-40 pts): High AI confidence in 'healthy' adds points
+    ai_factor = (ai_conf / 100.0) * 40
+    
+    # 2. Quantum factor (0-30 pts): Lower ones_ratio usually correlates to healthy in our circuit
+    q_factor = (1.0 - q_ones_ratio) * 30
+    
+    # 3. Pl@ntNet factor (0-30 pts): High confidence in species ID increases reliability
+    pn_factor = (pn_score / 100.0) * 30 if pn_score > 0 else 15
+    
+    return int(min(ai_factor + q_factor + pn_factor, 100))
+
+
+def get_weather_context() -> Dict[str, Any]:
+    """
+    Fetch local weather context based on IP.
+    Used to calculate environmental stress.
+    """
+    try:
+        # 1. Get location via IP
+        loc_res = requests.get("https://ipapi.co/json/", timeout=3).json()
+        city = loc_res.get("city", "Unknown")
+        
+        # 2. Get weather for that city (wttr.in returns simple JSON)
+        weather = requests.get(f"https://wttr.in/{city}?format=j1", timeout=5).json()
+        curr = weather["current_condition"][0]
+        
+        return {
+            "city": city,
+            "temp": f"{curr['temp_C']}°C",
+            "humidity": f"{curr['humidity']}%",
+            "desc": curr['weatherDesc'][0]['value'],
+            "uv": curr.get('uvIndex', 'N/A'),
+            "found": True
+        }
+    except Exception:
+        return {"city": "Global", "found": False}
+
+
+def generate_bio_signatures(img: np.ndarray, health_index: int) -> Dict[str, float]:
+    """
+    Simulates botanical bio-signatures based on image analysis.
+    Provides data for the radar chart.
+    """
+    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    
+    # Simple heuristics for bio-sigs
+    # 1. Chlorophyll Content (Green channel dominance in HSV)
+    green_mask = cv2.inRange(img_hsv, (35, 20, 20), (85, 255, 255))
+    chlorophyll = (np.sum(green_mask > 0) / (img.shape[0] * img.shape[1])) * 100
+    
+    # 2. Structural Integrity (Edge density from Canny)
+    edges = cv2.Canny(img, 100, 200)
+    structure = (np.sum(edges > 0) / (img.shape[0] * img.shape[1])) * 200 # scaled
+    
+    # 3. Hydration (V channel in HSV)
+    hydration = np.mean(img_hsv[:,:,2]) / 2.55
+    
+    # 4. Metabolic Stability (Fused with health index)
+    metabolic = (health_index * 0.8) + (np.random.rand() * 20)
+    
+    # Normalize
+    return {
+        "Chlorophyll": round(min(chlorophyll * 1.5, 100), 1),
+        "Structure": round(min(structure, 100), 1),
+        "Hydration": round(min(hydration, 100), 1),
+        "Metabolic": round(min(metabolic, 100), 1),
+        "Spectral UV": round(np.random.uniform(70, 95), 1)
     }

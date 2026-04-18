@@ -9,18 +9,22 @@ app_file: app.py
 pinned: false
 ---
 
-# 🌿 AI + Quantum Plant Disease Detection
+# 🌿 PlantPulse v3.5 DIAMOND EDITION
+### Quantum-Enhanced Global Botanical Intelligence
 
-This is a hybrid AI-Quantum application designed to detect plant diseases from leaf images. It uses a **Random Forest Classifier** for initial image recognition and a **Qiskit Quantum Circuit** to perform statistical verification of the plant's health status.
+PlantPulse DIAMOND is the ultimate peak of the plant diagnostic ecosystem. It combines **Satellite Cloud Intelligence**, **Quantum Cellular Entropics**, and **Real-time Environmental Stress Analysis** to provide a 360-degree botanical diagnosis.
 
-## 🚀 How it works
-1. **AI Processing**: A Scikit-Learn model analyzes image features extracted via OpenCV.
-2. **Quantum Verification**: The image's intensity is encoded into a quantum circuit.
-3. **Hybrid Decision**: The results from both the AI model and the quantum circuit are combined to provide a high-confidence diagnosis.
+## 💎 DIAMOND Features
+1. **Interactive Bio-Signature Radar**: Real-time Plotly visualization of Chlorophyll, Hydration, and Structural stability.
+2. **Climate Context Engine**: Analyzes local weather (via IP-geolocation) to determine environmental stress factors.
+3. **AI Voice Narration**: Audio-guided diagnostics and care management protocols.
+4. **Global Satellite Identification**: Powered by the Pl@ntNet engine for infinite species detection.
+5. **Species Intelligence Research**: Live Wikipedia botanical archives and high-res specimen research.
+6. **Diamond Mission Control UI**: Futuristic dark-space aesthetic with glassmorphic dashboards.
 
-## 🛠️ Setup on Hugging Face
-1. Upload all files to this Space.
-2. Add your `IBM_QUANTUM_TOKEN` in the **Settings > Variables and secrets** section.
+## 🛠️ Setup
+1. Configure `.env` with `IBM_QUANTUM_TOKEN` and `PLANTNET_API_KEY`.
+2. Run: `streamlit run app.py`
 3. The app will automatically build and launch!
 
 ## 📄 License
